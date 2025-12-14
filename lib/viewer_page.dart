@@ -1,13 +1,16 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:gal/gal.dart';
 import 'package:share_plus/share_plus.dart';
+import 'services/favorites_service.dart';
 
 class ViewerPage extends StatefulWidget {
   final String wallpaperUrl;
+  final String? heroTag;
 
-  const ViewerPage({super.key, required this.wallpaperUrl});
+  const ViewerPage({super.key, required this.wallpaperUrl, this.heroTag});
 
   @override
   State<ViewerPage> createState() => _ViewerPageState();
@@ -15,9 +18,31 @@ class ViewerPage extends StatefulWidget {
 
 class _ViewerPageState extends State<ViewerPage> {
   bool _isProcessing = false;
+  bool _isFavorite = false;
   static const platform = MethodChannel(
     'com.example.flutter_application_1/wallpaper',
   );
+  final FavoritesService _favoritesService = FavoritesService();
+
+  @override
+  void initState() {
+    super.initState();
+    _checkFavorite();
+  }
+
+  Future<void> _checkFavorite() async {
+    final isFav = await _favoritesService.isFavorite(widget.wallpaperUrl);
+    if (mounted) {
+      setState(() {
+        _isFavorite = isFav;
+      });
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    await _favoritesService.toggleFavorite(widget.wallpaperUrl);
+    await _checkFavorite();
+  }
 
   Future<void> _downloadImage() async {
     setState(() => _isProcessing = true);
@@ -25,9 +50,6 @@ class _ViewerPageState extends State<ViewerPage> {
       final file = await DefaultCacheManager().getSingleFile(
         widget.wallpaperUrl,
       );
-
-      // Request permission only if declared in manifest (handled by Gal mostly) or handled by OS
-      // Gal.putImage saves to gallery
       await Gal.putImage(file.path);
 
       if (!mounted) return;
@@ -105,19 +127,31 @@ class _ViewerPageState extends State<ViewerPage> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [
+          IconButton(
+            icon: Icon(
+              _isFavorite ? Icons.favorite : Icons.favorite_border,
+              color: _isFavorite ? Colors.red : Colors.white,
+            ),
+            onPressed: _toggleFavorite,
+          ),
+        ],
       ),
       body: Stack(
         children: [
           Positioned.fill(
-            child: Image.network(
-              widget.wallpaperUrl,
-              fit: BoxFit.cover,
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return const Center(
+            child: Hero(
+              tag: widget.heroTag ?? widget.wallpaperUrl,
+              child: CachedNetworkImage(
+                imageUrl: widget.wallpaperUrl,
+                fit: BoxFit.cover,
+                placeholder: (context, url) => const Center(
                   child: CircularProgressIndicator(color: Colors.white),
-                );
-              },
+                ),
+                errorWidget: (context, url, error) => const Center(
+                  child: Icon(Icons.broken_image, color: Colors.white),
+                ),
+              ),
             ),
           ),
           Positioned(
